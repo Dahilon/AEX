@@ -8,7 +8,7 @@ import logging
 import os
 import time
 import boto3
-from ddtrace.llmobs import LLMObs
+# from ddtrace.llmobs import LLMObs
 
 from .tools import TOOL_DEFINITIONS, ToolExecutor
 

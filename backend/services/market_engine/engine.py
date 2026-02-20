@@ -124,7 +124,7 @@ class MarketEngine:
 
     def _tick(self) -> None:
         """One market tick: update all agent prices, decay shocks, recompute derived metrics."""
-        from services.shock_engine.sector_betas import get_beta, MAX_TICK_IMPACT, DECAY_SCHEDULE
+        from backend.services.shock_engine.sector_betas import get_beta, MAX_TICK_IMPACT, DECAY_SCHEDULE
 
         # Collect shock impacts per agent
         shock_impacts: dict[str, float] = {aid: 0.0 for aid in self.state.agents}
