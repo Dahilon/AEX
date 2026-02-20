@@ -1,8 +1,8 @@
 """
-FastAPI middleware for automatic HTTP request metrics.
+FastAPI middleware for automatic HTTP request metrics + run_id propagation.
 
-Tracks latency, status codes, and error rates per endpoint —
-equivalent to APM service metrics without needing ddtrace instrumentation.
+Tracks latency, status codes, and error rates per endpoint.
+Injects run_id into response headers for frontend correlation.
 """
 
 import time
@@ -11,16 +11,29 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from .metrics import emit_request_metrics
+from .correlation import new_run_id, set_run_id
+
+_SKIP_PATHS = ("/health", "/docs", "/openapi.json", "/favicon.ico")
 
 
 class DatadogRequestMetrics(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
-        if request.url.path in ("/health", "/docs", "/openapi.json"):
+        if request.url.path in _SKIP_PATHS:
             return await call_next(request)
+
+        # Propagate or generate run_id
+        rid = request.headers.get("x-run-id", "")
+        if rid:
+            set_run_id(rid)
+        elif request.method == "POST":
+            rid = new_run_id("req")
 
         start = time.time()
         response = await call_next(request)
         latency_ms = (time.time() - start) * 1000
+
+        if rid:
+            response.headers["x-run-id"] = rid
 
         path = self._normalize_path(request.url.path)
         emit_request_metrics(
@@ -33,7 +46,6 @@ class DatadogRequestMetrics(BaseHTTPMiddleware):
 
     @staticmethod
     def _normalize_path(path: str) -> str:
-        """Collapse dynamic path segments to reduce cardinality."""
         parts = path.strip("/").split("/")
         normalized = []
         for i, part in enumerate(parts):

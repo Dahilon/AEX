@@ -1,9 +1,7 @@
 """
-Bedrock Risk Agent — same pattern as market_analyst but with surveillance focus.
-See docs/AGENTS_SPEC.md for full spec.
+Bedrock Risk Agent — market surveillance focus.
 """
 
-import json
 import logging
 import os
 import time
@@ -11,7 +9,8 @@ import boto3
 
 from .tools import TOOL_DEFINITIONS, ToolExecutor
 from backend.services.observability.tracing import LLMObs
-from backend.services.observability.metrics import emit_llm_metrics
+from backend.services.observability.metrics import emit_llm_metrics, estimate_llm_cost
+from backend.services.observability.correlation import get_run_id
 
 logger = logging.getLogger(__name__)
 
@@ -47,25 +46,37 @@ class RiskAgent:
         self._cache: dict | None = None
 
     def analyze(self) -> dict:
-        """
-        Run the Risk Agent.
-        Returns: { text, risk_level, model, cached }
-        """
         start = time.time()
+        run_id = get_run_id()
 
         try:
             result = self._run_with_tools()
         except Exception as e:
-            logger.error(f"Risk Agent Bedrock call failed: {e}", exc_info=True)
+            logger.error("Risk Agent Bedrock call failed: %s", e, exc_info=True)
             if self._cache:
                 self._cache["cached"] = True
+                self._cache["run_id"] = run_id
                 return self._cache
-            return {"text": "[Risk analysis unavailable]", "risk_level": "MEDIUM", "model": MODEL_ID, "cached": True}
+            return {
+                "text": "[Risk analysis unavailable]", "risk_level": "MEDIUM",
+                "model": MODEL_ID, "cached": True,
+                "cost_estimate_usd": 0, "run_id": run_id,
+            }
 
         result["latency_ms"] = round((time.time() - start) * 1000)
         result["cached"] = False
+        result["run_id"] = run_id
+        result["cost_estimate_usd"] = estimate_llm_cost(
+            result.get("input_tokens", 0), result.get("output_tokens", 0),
+        )
         self._cache = result
-        emit_llm_metrics("risk_agent", MODEL_ID, 0, 0, result["latency_ms"])
+
+        emit_llm_metrics(
+            "risk_agent", MODEL_ID,
+            result.get("input_tokens", 0),
+            result.get("output_tokens", 0),
+            result["latency_ms"],
+        )
         return result
 
     def _run_with_tools(self) -> dict:
@@ -74,6 +85,8 @@ class RiskAgent:
             "Check concentration risk, look for manipulation signals, and compute cascade probability."
         )
         messages = [{"role": "user", "content": [{"text": prompt}]}]
+        total_input_tokens = 0
+        total_output_tokens = 0
         final_text = ""
 
         with LLMObs.llm(model_name=MODEL_ID, model_provider="bedrock", name="risk_agent") as llm_span:
@@ -85,6 +98,10 @@ class RiskAgent:
                     toolConfig={"tools": TOOL_DEFINITIONS},
                     inferenceConfig={"maxTokens": 500, "temperature": 0.2},
                 )
+
+                usage = response.get("usage", {})
+                total_input_tokens  += usage.get("inputTokens", 0)
+                total_output_tokens += usage.get("outputTokens", 0)
 
                 stop_reason = response["stopReason"]
                 output_content = response["output"]["message"]["content"]
@@ -114,14 +131,21 @@ class RiskAgent:
                 span=llm_span,
                 input_data=[{"role": "user", "content": prompt}],
                 output_data=[{"role": "assistant", "content": final_text}],
+                metrics={"input_tokens": total_input_tokens, "output_tokens": total_output_tokens},
             )
 
         risk_level = self._extract_risk_level(final_text)
-        return {"text": final_text or "[No risk assessment generated]", "risk_level": risk_level, "model": MODEL_ID}
+        return {
+            "text": final_text or "[No risk assessment generated]",
+            "risk_level": risk_level,
+            "model": MODEL_ID,
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+        }
 
     def _extract_risk_level(self, text: str) -> str:
         text_upper = text.upper()
-        for level in reversed(RISK_LEVELS):  # check CRITICAL first
+        for level in reversed(RISK_LEVELS):
             if level in text_upper:
                 return level
         return "MEDIUM"

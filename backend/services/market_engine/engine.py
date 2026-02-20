@@ -2,6 +2,7 @@ import math
 import random
 import time
 import uuid
+import os
 import asyncio
 import logging
 from typing import Callable, Awaitable
@@ -11,28 +12,26 @@ from .seed_data import get_seed_agents
 
 logger = logging.getLogger(__name__)
 
-# ── Pricing parameters (see docs/MARKET_MODEL.md) ────────────────────────────
-ALPHA = 0.15   # inflow sensitivity
-BETA  = 0.10   # performance sensitivity
-GAMMA = 0.12   # risk penalty
+ALPHA = 0.15
+BETA  = 0.10
+GAMMA = 0.12
 NOISE_STD = 0.005
 PRICE_FLOOR = 1.0
-
-# Inflow decay per tick (approaches 0 if no new activity)
 INFLOW_DECAY = 0.95
+
+DEMO_MODE = os.environ.get("DEMO_MODE", "").lower() in ("true", "1", "yes")
+DEMO_SEED = 42
+
+DEMO_SHOCK_SEVERITIES = {
+    ShockType.REGULATION: 0.70,
+    ShockType.CYBER:      0.60,
+    ShockType.FX_SHOCK:   0.50,
+    ShockType.EARTHQUAKE: 0.55,
+    ShockType.SANCTIONS:  0.65,
+}
 
 
 class MarketEngine:
-    """
-    Core market simulation engine.
-
-    Usage:
-        engine = MarketEngine()
-        engine.start()           # starts background tick loop
-        engine.inject_shock(ShockType.REGULATION, severity=0.7)
-        snapshot = engine.get_snapshot()
-    """
-
     def __init__(self, tick_interval_ms: int = 2000):
         self.state = MarketState(agents=get_seed_agents())
         self.tick_interval_s = tick_interval_ms / 1000.0
@@ -41,17 +40,22 @@ class MarketEngine:
         self._running = False
         self._task: asyncio.Task | None = None
 
-        # Save initial fundamentals baseline
+        self.peak_market_cap: float = 0.0
+        self.drawdown_pct: float = 0.0
+        self.last_tick_latency_ms: float = 0.0
+
+        self._rng = random.Random(DEMO_SEED if DEMO_MODE else None)
+
         self._snapshot_prev_fundamentals()
 
-    # ── Lifecycle ─────────────────────────────────────────────────────────────
+        if DEMO_MODE:
+            logger.info("MarketEngine running in DEMO_MODE (seeded RNG, fixed severities)")
 
     def start(self) -> None:
-        """Start the async tick loop (call from FastAPI startup)."""
         if not self._running:
             self._running = True
             self._task = asyncio.create_task(self._tick_loop())
-            logger.info("MarketEngine started")
+            logger.info("MarketEngine started (tick=%.1fs)", self.tick_interval_s)
 
     def stop(self) -> None:
         self._running = False
@@ -60,10 +64,7 @@ class MarketEngine:
         logger.info("MarketEngine stopped")
 
     def on_tick(self, callback: Callable[[MarketState], Awaitable[None]]) -> None:
-        """Register a callback that fires after each market tick."""
         self._tick_callbacks.append(callback)
-
-    # ── Public API ────────────────────────────────────────────────────────────
 
     def inject_shock(
         self,
@@ -72,9 +73,8 @@ class MarketEngine:
         description: str | None = None,
         source: str = "manual",
     ) -> ShockEvent:
-        """Create and register a new shock event."""
         if severity is None:
-            severity = 0.65   # sensible default for manual injection
+            severity = DEMO_SHOCK_SEVERITIES.get(shock_type, 0.65) if DEMO_MODE else 0.65
         severity = max(0.0, min(1.0, severity))
 
         shock = ShockEvent(
@@ -85,17 +85,19 @@ class MarketEngine:
             source=source,
         )
         self.state.active_shocks.append(shock)
-        logger.info(f"Shock injected: {shock_type.value} severity={severity:.2f}")
+        logger.info("Shock injected: %s severity=%.2f", shock_type.value, severity)
         return shock
 
     def get_snapshot(self) -> dict:
-        return self.state.to_snapshot()
+        snapshot = self.state.to_snapshot()
+        snapshot["drawdown_pct"] = round(self.drawdown_pct, 4)
+        snapshot["peak_market_cap"] = round(self.peak_market_cap, 2)
+        return snapshot
 
     def get_agents(self) -> list[dict]:
         return [a.to_dict() for a in self.state.agents.values()]
 
     def simulate_buy(self, agent_id: str, amount: float) -> None:
-        """Simulate a capital inflow event for an agent."""
         agent = self.state.agents.get(agent_id)
         if agent:
             delta = amount / max(agent.total_backing, 1.0)
@@ -103,34 +105,32 @@ class MarketEngine:
             agent.total_backing += amount
 
     def simulate_sell(self, agent_id: str, amount: float) -> None:
-        """Simulate a capital outflow event for an agent."""
         agent = self.state.agents.get(agent_id)
         if agent:
             delta = amount / max(agent.total_backing, 1.0)
             agent.inflow_velocity = max(-1.0, agent.inflow_velocity - delta)
             agent.total_backing = max(1.0, agent.total_backing - amount)
 
-    # ── Internal tick logic ───────────────────────────────────────────────────
-
     async def _tick_loop(self) -> None:
         while self._running:
             try:
+                tick_start = time.time()
                 self._tick()
+                self.last_tick_latency_ms = (time.time() - tick_start) * 1000
+
                 for cb in self._tick_callbacks:
                     await cb(self.state)
             except Exception as e:
-                logger.error(f"Tick error: {e}", exc_info=True)
+                logger.error("Tick error: %s", e, exc_info=True)
             await asyncio.sleep(self.tick_interval_s)
 
     def _tick(self) -> None:
-        """One market tick: update all agent prices, decay shocks, recompute derived metrics."""
         from backend.services.shock_engine.sector_betas import get_beta, MAX_TICK_IMPACT, DECAY_SCHEDULE
 
-        # Collect shock impacts per agent
         shock_impacts: dict[str, float] = {aid: 0.0 for aid in self.state.agents}
 
         for shock in self.state.active_shocks:
-            tick_index = 4 - shock.ticks_remaining          # 0,1,2,3
+            tick_index = 4 - shock.ticks_remaining
             decay = DECAY_SCHEDULE[min(tick_index, 3)]
 
             for agent in self.state.agents.values():
@@ -139,19 +139,21 @@ class MarketEngine:
                 clamped = max(-MAX_TICK_IMPACT, min(MAX_TICK_IMPACT, raw_impact))
                 shock_impacts[agent.agent_id] += clamped
 
-        # Decay shocks
         for shock in self.state.active_shocks:
             shock.ticks_remaining -= 1
         self.state.active_shocks = [s for s in self.state.active_shocks if s.ticks_remaining > 0]
 
-        # Update each agent
         for agent in self.state.agents.values():
             self._update_agent(agent, shock_impacts[agent.agent_id])
 
-        # Recompute market-level metrics
         self.state.total_market_cap = sum(a.market_cap for a in self.state.agents.values())
         self.state.cascade_probability = self._compute_cascade_probability()
         self.state.tick_number += 1
+
+        if self.state.total_market_cap > self.peak_market_cap:
+            self.peak_market_cap = self.state.total_market_cap
+        if self.peak_market_cap > 0:
+            self.drawdown_pct = ((self.state.total_market_cap - self.peak_market_cap) / self.peak_market_cap) * 100
 
         self._snapshot_prev_fundamentals()
 
@@ -162,7 +164,7 @@ class MarketEngine:
 
         performance_delta = agent.performance_score - prev_perf
         risk_delta = agent.risk_score - prev_risk
-        noise = random.gauss(0, NOISE_STD)
+        noise = self._rng.gauss(0, NOISE_STD)
 
         delta = (
             ALPHA * agent.inflow_velocity
@@ -175,7 +177,6 @@ class MarketEngine:
         new_price = agent.price * (1 + delta)
         new_price = max(PRICE_FLOOR, new_price)
 
-        # Update price history (rolling 20)
         agent.price_history.append(new_price)
         if len(agent.price_history) > 20:
             agent.price_history.pop(0)
@@ -183,7 +184,6 @@ class MarketEngine:
         agent.price = new_price
         agent.market_cap = new_price * agent.total_backing
 
-        # Compute volatility as std dev of last 20 log-returns
         if len(agent.price_history) >= 2:
             returns = [
                 math.log(agent.price_history[i] / agent.price_history[i - 1])
@@ -195,28 +195,19 @@ class MarketEngine:
                 variance = sum((r - mean) ** 2 for r in returns) / len(returns)
                 agent.volatility = math.sqrt(variance)
 
-        # Decay inflow velocity
         agent.inflow_velocity *= INFLOW_DECAY
-
-        # Simulate passive user behavior: mild herding toward best performer
         self._simulate_passive_flows(agent)
 
     def _simulate_passive_flows(self, agent: AgentFundamentals) -> None:
-        """Small random user allocations to keep the market alive."""
-        if random.random() < 0.15:  # 15% chance each tick
+        if self._rng.random() < 0.15:
             direction = 1 if agent.price_change_pct > 0 else -1
-            amount = random.uniform(10, 80)
+            amount = self._rng.uniform(10, 80)
             if direction > 0:
                 self.simulate_buy(agent.agent_id, amount)
             else:
                 self.simulate_sell(agent.agent_id, amount * 0.5)
 
     def _compute_cascade_probability(self) -> float:
-        """
-        Simple cascade probability heuristic:
-        High volatility + concentrated inflows across correlated agents → risk.
-        Returns 0.0–1.0.
-        """
         avg_volatility = sum(a.volatility for a in self.state.agents.values()) / max(len(self.state.agents), 1)
         active_shock_severity = sum(s.severity for s in self.state.active_shocks)
         cascade = min(1.0, (avg_volatility * 10) + (active_shock_severity * 0.3))

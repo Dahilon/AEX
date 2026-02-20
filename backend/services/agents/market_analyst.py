@@ -1,15 +1,8 @@
 """
 Bedrock Market Analyst Agent.
-
-Uses the Converse API with tool-use to:
-1. Call market_snapshot() to get current market state
-2. Call graph_query() to get graph data
-3. Return a structured analysis
-
-See docs/AGENTS_SPEC.md for full spec.
+Uses the Converse API with tool-use.
 """
 
-import json
 import logging
 import os
 import time
@@ -17,14 +10,14 @@ import boto3
 
 from .tools import TOOL_DEFINITIONS, ToolExecutor
 from backend.services.observability.tracing import LLMObs
-from backend.services.observability.metrics import emit_llm_metrics
+from backend.services.observability.metrics import emit_llm_metrics, estimate_llm_cost
+from backend.services.observability.correlation import get_run_id
 
 logger = logging.getLogger(__name__)
 
 MODEL_ID = os.environ.get("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20241022-v2:0")
 FALLBACK_MODEL_ID = "amazon.nova-pro-v1:0"
 MAX_TOOL_ROUNDS = 3
-TIMEOUT_S = 15.0
 
 SYSTEM_PROMPT = """You are the AEX Market Analyst — an AI agent that analyzes a simulated market of AI agents.
 
@@ -55,33 +48,39 @@ class MarketAnalystAgent:
         self._cache: dict | None = None
 
     def analyze(self, user_question: str = "Analyze the current market state and explain what's happening.") -> dict:
-        """
-        Run the Market Analyst agent.
-        Returns: { text, model, input_tokens, output_tokens, latency_ms, cached }
-        """
         start = time.time()
+        run_id = get_run_id()
 
         try:
             result = self._run_with_tools(user_question)
         except Exception as e:
-            logger.error(f"Bedrock call failed: {e}", exc_info=True)
+            logger.error("Bedrock call failed: %s", e, exc_info=True)
             if self._cache:
                 self._cache["cached"] = True
+                self._cache["run_id"] = run_id
                 return self._cache
             return {
                 "text": f"[Analysis unavailable: {str(e)}]",
                 "model": MODEL_ID,
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "latency_ms": 0,
-                "cached": True,
+                "input_tokens": 0, "output_tokens": 0,
+                "latency_ms": 0, "cached": True,
+                "cost_estimate_usd": 0, "run_id": run_id,
             }
 
         result["latency_ms"] = round((time.time() - start) * 1000)
         result["cached"] = False
+        result["run_id"] = run_id
+        result["cost_estimate_usd"] = estimate_llm_cost(
+            result.get("input_tokens", 0), result.get("output_tokens", 0),
+        )
         self._cache = result
-        emit_llm_metrics("market_analyst", MODEL_ID, result.get("input_tokens", 0),
-                         result.get("output_tokens", 0), result["latency_ms"])
+
+        emit_llm_metrics(
+            "market_analyst", MODEL_ID,
+            result.get("input_tokens", 0),
+            result.get("output_tokens", 0),
+            result["latency_ms"],
+        )
         return result
 
     def _run_with_tools(self, user_question: str) -> dict:
@@ -90,12 +89,8 @@ class MarketAnalystAgent:
         total_output_tokens = 0
         final_text = ""
 
-        with LLMObs.llm(
-            model_name=MODEL_ID,
-            model_provider="bedrock",
-            name="market_analyst",
-        ) as llm_span:
-            for round_num in range(MAX_TOOL_ROUNDS):
+        with LLMObs.llm(model_name=MODEL_ID, model_provider="bedrock", name="market_analyst") as llm_span:
+            for _ in range(MAX_TOOL_ROUNDS):
                 response = self._bedrock.converse(
                     modelId=MODEL_ID,
                     system=[{"text": SYSTEM_PROMPT}],
@@ -110,48 +105,35 @@ class MarketAnalystAgent:
 
                 stop_reason = response["stopReason"]
                 output_content = response["output"]["message"]["content"]
-
                 messages.append({"role": "assistant", "content": output_content})
 
                 if stop_reason == "end_turn":
-                    # Extract text from response
                     for block in output_content:
                         if "text" in block:
                             final_text = block["text"]
                     break
 
                 elif stop_reason == "tool_use":
-                    # Execute all tool calls and add results to messages
                     tool_results = []
                     for block in output_content:
                         if "toolUse" in block:
                             tool_use = block["toolUse"]
-                            tool_result = self.executor.execute(
-                                tool_use["name"],
-                                tool_use["input"],
-                            )
+                            tool_result = self.executor.execute(tool_use["name"], tool_use["input"])
                             tool_results.append({
                                 "toolResult": {
                                     "toolUseId": tool_use["toolUseId"],
                                     "content": [{"text": tool_result}],
                                 }
                             })
-
                     messages.append({"role": "user", "content": tool_results})
-
                 else:
-                    logger.warning(f"Unexpected stop_reason: {stop_reason}")
                     break
 
-            # Annotate LLM Obs span
             LLMObs.annotate(
                 span=llm_span,
                 input_data=[{"role": "user", "content": user_question}],
                 output_data=[{"role": "assistant", "content": final_text}],
-                metrics={
-                    "input_tokens": total_input_tokens,
-                    "output_tokens": total_output_tokens,
-                },
+                metrics={"input_tokens": total_input_tokens, "output_tokens": total_output_tokens},
             )
 
         return {
