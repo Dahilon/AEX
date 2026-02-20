@@ -4,7 +4,9 @@
 
 set -e
 
-cd "$(dirname "$0")/backend"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT/backend"
+export PYTHONPATH="$ROOT"
 
 # Load env vars
 if [ -f services/.env ]; then
@@ -29,9 +31,8 @@ echo "   SIGNAL_MODE=${SIGNAL_MODE}"
 echo "   MARKET_TICK_INTERVAL_MS=${MARKET_TICK_INTERVAL_MS}"
 echo ""
 
-DD_SERVICE=aex DD_ENV=demo \
-  ddtrace-run uvicorn backend.services.api.main:app \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --reload \
-  --log-level info
+if command -v ddtrace-run &>/dev/null; then
+  DD_SERVICE=aex DD_ENV=demo ddtrace-run uvicorn backend.services.api.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
+else
+  uvicorn backend.services.api.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
+fi

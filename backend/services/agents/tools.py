@@ -3,7 +3,6 @@ Tool implementations for Bedrock agents.
 
 These are called when Bedrock returns a tool_use block.
 market_snapshot() → current market state
-graph_query()     → Neo4j graph query result
 """
 
 import logging
@@ -11,7 +10,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from backend.services.market_engine.engine import MarketEngine
-    from backend.services.graph.service import GraphService
 
 logger = logging.getLogger(__name__)
 
@@ -44,50 +42,17 @@ TOOL_DEFINITIONS = [
             },
         }
     },
-    {
-        "toolSpec": {
-            "name": "graph_query",
-            "description": (
-                "Query the capital flow graph to understand how capital moves through "
-                "the market. Returns data about inflows, concentration risk, and contagion paths."
-            ),
-            "inputSchema": {
-                "json": {
-                    "type": "object",
-                    "properties": {
-                        "query_type": {
-                            "type": "string",
-                            "description": "Type of query to run",
-                            "enum": [
-                                "top_inflow",
-                                "concentration_risk",
-                                "contagion_path",
-                                "cross_sector_exposure",
-                                "most_impacted_users",
-                            ],
-                        },
-                        "params": {
-                            "type": "object",
-                            "description": "Optional query parameters (e.g., shock_id, limit)",
-                        },
-                    },
-                    "required": ["query_type"],
-                }
-            },
-        }
-    },
 ]
 
 
 class ToolExecutor:
     """
     Executes tool calls from Bedrock agents.
-    Injected with engine and graph_service at startup.
+    Injected with engine at startup.
     """
 
-    def __init__(self, engine: "MarketEngine", graph_service: "GraphService"):
+    def __init__(self, engine: "MarketEngine"):
         self.engine = engine
-        self.graph_service = graph_service
 
     def execute(self, tool_name: str, tool_input: dict) -> str:
         """
@@ -101,8 +66,6 @@ class ToolExecutor:
         try:
             if tool_name == "market_snapshot":
                 result = self._market_snapshot(tool_input)
-            elif tool_name == "graph_query":
-                result = self._graph_query(tool_input)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
         except Exception as e:
@@ -126,12 +89,3 @@ class ToolExecutor:
                 agent.pop("price_history", None)
 
         return snapshot
-
-    def _graph_query(self, tool_input: dict) -> dict:
-        query_type = tool_input["query_type"]
-        params = tool_input.get("params", {})
-        rows = self.graph_service.run_query(query_type, params)
-        return {
-            "query_type": query_type,
-            "results": rows,
-        }

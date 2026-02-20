@@ -13,7 +13,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.services.market_engine.engine import MarketEngine
-from backend.services.graph.service import GraphService
 from backend.services.agents.tools import ToolExecutor
 from backend.services.agents.market_analyst import MarketAnalystAgent
 from backend.services.agents.risk_agent import RiskAgent
@@ -28,8 +27,7 @@ logger = logging.getLogger(__name__)
 # ── Shared app state (injected into routes via request.app.state) ─────────────
 
 engine = MarketEngine(tick_interval_ms=int(os.environ.get("MARKET_TICK_INTERVAL_MS", 2000)))
-graph_service = GraphService()
-tool_executor = ToolExecutor(engine, graph_service)
+tool_executor = ToolExecutor(engine)
 analyst_agent = MarketAnalystAgent(tool_executor)
 risk_agent_instance = RiskAgent(tool_executor)
 
@@ -41,12 +39,6 @@ async def lifespan(app: FastAPI):
 
     init_datadog()
     init_llm_obs()
-
-    try:
-        graph_service.connect()
-        logger.info("Neo4j connected")
-    except Exception as e:
-        logger.warning(f"Neo4j connection failed (non-fatal): {e}")
 
     # Register post-tick callbacks
     async def on_market_tick(state):
@@ -64,7 +56,6 @@ async def lifespan(app: FastAPI):
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
     engine.stop()
-    graph_service.close()
     logger.info("AEX shutdown complete")
 
 
@@ -87,7 +78,6 @@ app.add_middleware(
 
 # Inject shared state into app
 app.state.engine = engine
-app.state.graph_service = graph_service
 app.state.analyst_agent = analyst_agent
 app.state.risk_agent = risk_agent_instance
 
