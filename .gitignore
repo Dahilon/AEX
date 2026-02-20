@@ -1,0 +1,29 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.pytest_cache/
+.mypy_cache/
+
+# Env files (never commit secrets)
+services/.env
+ui/.env.local
+.env
+
+# Node
+ui/node_modules/
+ui/.next/
+ui/out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Logs
+*.log
