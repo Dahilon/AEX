@@ -13,7 +13,7 @@ import uuid
 import logging
 from pathlib import Path
 
-from services.market_engine.models import SignalEvent
+from backend.services.market_engine.models import SignalEvent
 
 logger = logging.getLogger(__name__)
 

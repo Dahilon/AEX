@@ -10,8 +10,8 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from services.market_engine.engine import MarketEngine
-    from services.graph.service import GraphService
+    from backend.services.market_engine.engine import MarketEngine
+    from backend.services.graph.service import GraphService
 
 logger = logging.getLogger(__name__)
 

@@ -4,12 +4,12 @@
 
 set -e
 
-cd "$(dirname "$0")/ui"
+cd "$(dirname "$0")/frontend/ui"
 
 if [ -f .env.local.example ] && [ ! -f .env.local ]; then
-  echo "⚠️  ui/.env.local not found. Copying from .env.local.example..."
+  echo "⚠️  frontend/ui/.env.local not found. Copying from .env.local.example..."
   cp .env.local.example .env.local
-  echo "   Edit ui/.env.local and set ANTHROPIC_API_KEY"
+  echo "   Edit frontend/ui/.env.local and set ANTHROPIC_API_KEY"
 fi
 
 if [ ! -d node_modules ]; then

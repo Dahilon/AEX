@@ -1,4 +1,4 @@
-from services.market_engine.models import ShockType, Sector
+from backend.services.market_engine.models import ShockType, Sector
 
 # ── Sector Beta Matrix ────────────────────────────────────────────────────────
 # How sensitive each sector is to each shock type.

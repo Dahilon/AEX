@@ -2,7 +2,7 @@
 Seed the Neo4j graph with demo data.
 
 Run once before the demo:
-    python -m services.graph.seed
+    python -m backend.services.graph.seed
 
 Creates: Users, CapitalPools, Agents, Sectors, and all edges.
 """
@@ -10,9 +10,9 @@ Creates: Users, CapitalPools, Agents, Sectors, and all edges.
 import uuid
 import random
 import logging
-from services.graph.service import GraphService
-from services.market_engine.seed_data import SEED_AGENTS
-from services.graph import queries as Q
+from backend.services.graph.service import GraphService
+from backend.services.market_engine.seed_data import SEED_AGENTS
+from backend.services.graph import queries as Q
 
 logger = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@
 AEX FastAPI Application — main entry point.
 
 Start with:
-    DD_SERVICE=aex DD_ENV=demo ddtrace-run uvicorn services.api.main:app --reload --port 8000
+    DD_SERVICE=aex DD_ENV=demo ddtrace-run uvicorn backend.services.api.main:app --reload --port 8000
 """
 
 import logging
@@ -12,13 +12,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from services.market_engine.engine import MarketEngine
-from services.graph.service import GraphService
-from services.agents.tools import ToolExecutor
-from services.agents.market_analyst import MarketAnalystAgent
-from services.agents.risk_agent import RiskAgent
-from services.observability.metrics import init_datadog, emit_agent_metrics, emit_market_metrics
-from services.observability.tracing import init_llm_obs
+from backend.services.market_engine.engine import MarketEngine
+from backend.services.graph.service import GraphService
+from backend.services.agents.tools import ToolExecutor
+from backend.services.agents.market_analyst import MarketAnalystAgent
+from backend.services.agents.risk_agent import RiskAgent
+from backend.services.observability.metrics import init_datadog, emit_agent_metrics, emit_market_metrics
+from backend.services.observability.tracing import init_llm_obs
 
 from .routes import market, shock, analysis, graph, tests
 

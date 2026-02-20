@@ -7,8 +7,8 @@ import logging
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from services.market_engine.models import ShockType
-from services.observability.metrics import emit_shock_metric
+from backend.services.market_engine.models import ShockType
+from backend.services.observability.metrics import emit_shock_metric
 from .market import manager  # reuse WS broadcast
 
 logger = logging.getLogger(__name__)
@@ -46,8 +46,8 @@ async def inject_shock(body: InjectShockRequest, request: Request) -> dict:
     try:
         graph_service.create_shock(shock_dict)
         # Link shock to all sectors with appropriate beta
-        from services.shock_engine.sector_betas import get_beta, SECTOR_BETAS
-        from services.market_engine.models import Sector
+        from backend.services.shock_engine.sector_betas import get_beta, SECTOR_BETAS
+        from backend.services.market_engine.models import Sector
         sector_impacts = []
         for sector in Sector:
             beta = get_beta(shock.shock_type, sector)

@@ -62,16 +62,21 @@ AEX/
 │   ├── MINIMAX_SPEC.md
 │   ├── DEMO_SCRIPT.md
 │   └── TASKS.md
-├── services/                # Backend services
-│   ├── api/                 # FastAPI app
-│   ├── ingestion/           # Signal pollers
-│   ├── shock_engine/        # ShockEvent processing
-│   ├── market_engine/       # Valuation + price updates
-│   ├── agents/              # Bedrock agent wrappers
-│   └── graph/               # Neo4j queries
-├── ui/                      # Next.js + CopilotKit frontend
+├── backend/                 # Backend services
+│   └── services/
+│       ├── api/             # FastAPI app
+│       ├── ingestion/       # Signal pollers
+│       ├── shock_engine/    # ShockEvent processing
+│       ├── market_engine/   # Valuation + price updates
+│       ├── agents/          # Bedrock agent wrappers
+│       └── graph/           # Neo4j queries
+├── frontend/                # Frontend UI
+│   └── ui/                  # Next.js + CopilotKit frontend
 ├── infra/                   # AWS CDK / deploy scripts
-└── tests/                   # TestSprite + unit tests
+├── tests/                   # TestSprite + unit tests
+├── run_backend.sh           # Start backend server
+├── run_frontend.sh          # Start frontend server
+└── seed_neo4j.sh            # Seed Neo4j graph
 ```
 
 ## Quick Start

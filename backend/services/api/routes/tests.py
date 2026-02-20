@@ -106,7 +106,7 @@ async def _test_shock_sector_rule(engine) -> dict:
     Spec: inject REGULATION 0.7 → run 5 ticks → Compliance avg > 0%, Fraud/AML avg < 0%, spread >= 3%.
     """
     import asyncio
-    from services.market_engine.models import ShockType, Sector
+    from backend.services.market_engine.models import ShockType, Sector
 
     start = time.time()
 

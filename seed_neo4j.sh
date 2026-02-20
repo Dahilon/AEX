@@ -4,14 +4,14 @@
 
 set -e
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/backend"
 
 if [ -f services/.env ]; then
   export $(grep -v '^#' services/.env | xargs)
 fi
 
-source .venv/bin/activate 2>/dev/null || true
+source ../.venv/bin/activate 2>/dev/null || true
 
 echo "🌱 Seeding Neo4j graph..."
-python -m services.graph.seed
+python -m backend.services.graph.seed
 echo "✅ Neo4j graph seeded!"

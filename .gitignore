@@ -8,14 +8,14 @@ dist/
 .mypy_cache/
 
 # Env files (never commit secrets)
-services/.env
-ui/.env.local
+backend/services/.env
+frontend/ui/.env.local
 .env
 
 # Node
-ui/node_modules/
-ui/.next/
-ui/out/
+frontend/ui/node_modules/
+frontend/ui/.next/
+frontend/ui/out/
 
 # OS
 .DS_Store

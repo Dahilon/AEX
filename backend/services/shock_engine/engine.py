@@ -1,6 +1,6 @@
 import uuid
 import logging
-from services.market_engine.models import SignalEvent, ShockEvent, ShockType
+from backend.services.market_engine.models import SignalEvent, ShockEvent, ShockType
 
 logger = logging.getLogger(__name__)
 
