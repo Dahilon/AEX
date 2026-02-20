@@ -8,9 +8,10 @@ import logging
 import os
 import time
 import boto3
-# from ddtrace.llmobs import LLMObs
 
 from .tools import TOOL_DEFINITIONS, ToolExecutor
+from backend.services.observability.tracing import LLMObs
+from backend.services.observability.metrics import emit_llm_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,7 @@ class RiskAgent:
         result["latency_ms"] = round((time.time() - start) * 1000)
         result["cached"] = False
         self._cache = result
+        emit_llm_metrics("risk_agent", MODEL_ID, 0, 0, result["latency_ms"])
         return result
 
     def _run_with_tools(self) -> dict:
