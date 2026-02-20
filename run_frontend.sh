@@ -10,7 +10,7 @@ echo "Working directory: $(pwd)"
 if [ -f .env.local.example ] && [ ! -f .env.local ]; then
   echo "⚠️  frontend/ui/.env.local not found. Copying from .env.local.example..."
   cp .env.local.example .env.local
-  echo "   Edit frontend/ui/.env.local and set ANTHROPIC_API_KEY"
+  echo "   Edit frontend/ui/.env.local if needed (e.g. NEXT_PUBLIC_API_URL)"
 fi
 
 if [ ! -d node_modules ]; then
