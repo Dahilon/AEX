@@ -1,3 +1,71 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --color-surface-0: #06080f;
+    --color-gain: #22c55e;
+    --color-loss: #ef4444;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--color-surface-0);
+    color: #e2e8f0;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(75, 85, 99, 0.4) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(75, 85, 99, 0.4);
+    border-radius: 3px;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-surface-2/70 backdrop-blur-[16px] border border-border-subtle rounded-xl;
+  }
+
+  .glass-card-flat {
+    @apply bg-surface-2/50 border border-border-subtle rounded-lg;
+  }
+
+  .pill {
+    @apply px-2.5 py-0.5 rounded-full text-[11px] font-medium tracking-wide uppercase;
+  }
+
+  .btn-primary {
+    @apply px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-150
+           bg-accent text-white hover:bg-blue-600 active:scale-[0.97];
+  }
+
+  .btn-ghost {
+    @apply px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-150
+           text-gray-400 hover:text-gray-200 hover:bg-surface-3/60 active:scale-[0.97];
+  }
+
+  .btn-buy {
+    @apply px-4 py-1.5 rounded-lg text-sm font-semibold transition-all duration-150
+           bg-gain/15 text-gain border border-gain/30 hover:bg-gain/25 active:scale-[0.97];
+  }
+
+  .btn-sell {
+    @apply px-4 py-1.5 rounded-lg text-sm font-semibold transition-all duration-150
+           bg-loss/15 text-loss border border-loss/30 hover:bg-loss/25 active:scale-[0.97];
+  }
+}
